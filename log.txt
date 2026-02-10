@@ -1,0 +1,26 @@
+NixDebugAdapter ctor called
+NixDebugAdapter running...
+[2m--> E (output): {"type":"event","event":"output","body":{"category":"console","output":"NixDebugAdapter running...\n","data":"NixDebugAdapter running..."},"seq":2}[0m
+[2m<--   C (initialize-1): {"command":"initialize","arguments":{"clientID":"vscode","clientName":"Visual Studio Code","adapterID":"nix","pathFormat":"path","linesStartAt1":true,"columnsStartAt1":true,"supportsVariableType":true,"supportsVariablePaging":true,"supportsRunInTerminalRequest":true,"locale":"en","supportsProgressReporting":true,"supportsInvalidatedEvent":true,"supportsMemoryReferences":true,"supportsArgsCanBeInterpretedByShell":true,"supportsMemoryEvent":true,"supportsStartDebuggingRequest":true,"supportsANSIStyling":true},"type":"request","seq":1}[0m
+Connection initialized with 'Visual Studio Code' (vscode), with args:
+[2m--> E (output): {"type":"event","event":"output","body":{"category":"console","output":"Connection initialized with 'Visual Studio Code' (vscode), with args:\n","data":"Connection initialized with 'Visual Studio Code' (vscode), with args:"},"seq":5}[0m
+{"pathFormat":"path","clientID":"vscode","clientName":"Visual Studio Code","adapterID":"nix","locale":"en","linesStartAt1":true,"columnsStartAt1":true,"supportsVariableType":true,"supportsVariablePaging":true,"supportsRunInTerminalRequest":true,"supportsMemoryReferences":true,"supportsProgressReporting":true,"supportsInvalidatedEvent":true,"supportsMemoryEvent":true,"supportsArgsCanBeInterpretedByShell":true,"supportsStartDebuggingRequest":true,"supportsANSIStyling":true}
+[2m--> E (output): {"type":"event","event":"output","body":{"category":"console","output":"{\"pathFormat\":\"path\",\"clientID\":\"vscode\",\"clientName\":\"Visual Studio Code\",\"adapterID\":\"nix\",\"locale\":\"en\",\"linesStartAt1\":true,\"columnsStartAt1\":true,\"supportsVariableType\":true,\"supportsVariablePaging\":true,\"supportsRunInTerminalRequest\":true,\"supportsMemoryReferences\":true,\"supportsProgressReporting\":true,\"supportsInvalidatedEvent\":true,\"supportsMemoryEvent\":true,\"supportsArgsCanBeInterpretedByShell\":true,\"supportsStartDebuggingRequest\":true,\"supportsANSIStyling\":true}\n","data":"{\"pathFormat\":\"path\",\"clientID\":\"vscode\",\"clientName\":\"Visual Studio Code\",\"adapterID\":\"nix\",\"locale\":\"en\",\"linesStartAt1\":true,\"columnsStartAt1\":true,\"supportsVariableType\":true,\"supportsVariablePaging\":true,\"supportsRunInTerminalRequest\":true,\"supportsMemoryReferences\":true,\"supportsProgressReporting\":true,\"supportsInvalidatedEvent\":true,\"supportsMemoryEvent\":true,\"supportsArgsCanBeInterpretedByShell\":true,\"supportsStartDebuggingRequest\":true,\"supportsANSIStyling\":true}"},"seq":7}[0m
+[2m--> R (initialize-1): {"type":"response","request_seq":1,"success":true,"command":"initialize","body":{"supportsConfigurationDoneRequest":true,"exceptionBreakpointFilters":[],"completionTriggerCharacters":[],"additionalModuleColumns":[],"supportedChecksumAlgorithms":[],"supportsTerminateRequest":true,"breakpointModes":[]},"seq":9}[0m
+[2m<--   C (launch-2): {"command":"launch","arguments":{"type":"nix","request":"launch","name":"Debug default.nix","program":"/home/blokyk/dev/lab/dap/js-sample/sampleWorkspace/default.nix","__configurationTarget":6,"__sessionId":"917baed5-8e68-4195-b7bb-c8d430079f3c"},"type":"request","seq":2}[0m
+launching file '/home/blokyk/dev/lab/dap/js-sample/sampleWorkspace/default.nix' with flags ...
+[2m--> E (output): {"type":"event","event":"output","body":{"category":"console","output":"launching file '/home/blokyk/dev/lab/dap/js-sample/sampleWorkspace/default.nix' with flags ...\n","data":"launching file '/home/blokyk/dev/lab/dap/js-sample/sampleWorkspace/default.nix' with flags ..."},"seq":12}[0m
+nix eval started, pid 43924
+[2m--> E (output): {"type":"event","event":"output","body":{"category":"console","output":"nix eval started, pid 43924\n","data":"nix eval started, pid 43924"},"seq":14}[0m
+[2m--> R (launch-2): {"type":"response","request_seq":2,"success":true,"command":"launch","body":{},"seq":16}[0m
+[2m--> E (process): {"type":"event","event":"process","body":{"startMethod":"launch","name":"nix","systemProcessId":43924,"isLocalProcess":true,"pointerSize":64},"seq":18}[0m
+[2m<--   C (terminate-3): {"command":"terminate","arguments":{"restart":false},"type":"request","seq":3}[0m
+Stopping the nix eval process
+[2m--> E (output): {"type":"event","event":"output","body":{"category":"console","output":"Stopping the nix eval process\n","data":"Stopping the nix eval process"},"seq":21}[0m
+[2m--> R (terminate-3): {"type":"response","request_seq":3,"success":true,"command":"terminate","body":{},"seq":23}[0m
+nix eval exited
+[2m--> E (output): {"type":"event","event":"output","body":{"category":"console","output":"nix eval exited\n","data":"nix eval exited"},"seq":25}[0m
+[2m--> E (exited): {"type":"event","event":"exited","body":{"exitCode":137},"seq":27}[0m
+[2m--> E (terminated): {"type":"event","event":"terminated","body":{},"seq":29}[0m
+[2m<--   C (disconnect-4): {"command":"disconnect","arguments":{"restart":false},"type":"request","seq":4}[0m
+[2m--> R (disconnect-4): {"type":"response","request_seq":4,"success":true,"command":"disconnect","body":{},"seq":32}[0m

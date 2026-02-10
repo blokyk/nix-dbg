@@ -92,11 +92,13 @@ internal class NixDebugAdapter : DebugAdapterBase
             (msg) => Protocol.SendEvent(new OutputEvent() { Output = msg, Category = OutputEvent.CategoryValue.Stdout });
 
         Debugger.OnBreak +=
-            (trace) => Protocol.SendEvent(new StoppedEvent() {
-                AllThreadsStopped = true,
-                Reason = StoppedEvent.ReasonValue.Breakpoint,
-                Description = "Breakpoint reached",
-            });
+            (trace) => {
+                Protocol.SendEvent(new StoppedEvent() {
+                    AllThreadsStopped = true,
+                    Reason = StoppedEvent.ReasonValue.Breakpoint,
+                    Description = "Breakpoint reached",
+                });
+            };
 
         Debugger.OnError +=
             (trace, msg) => Protocol.SendEvent(new StoppedEvent() {
@@ -118,6 +120,27 @@ internal class NixDebugAdapter : DebugAdapterBase
 
         return new(); // ACK
     }
+
+    protected override StackTraceResponse HandleStackTraceRequest(StackTraceArguments arguments) {
+        var allFrames = Debugger!.CurrentStackTrace.Frames;
+
+        var reqStart = arguments.StartFrame ?? 0;
+        // if `Levels` is 0 or null, then we should return all the frames; otherwise, we only return a limited number of frames
+        var reqCount = arguments.Levels is 0 or null ? allFrames.Length : arguments.Levels.Value;
+
+        // clamp the start idx and count so it doesn't exceed the real frame count
+        var start = Math.Min(reqStart, allFrames.Length - 1);
+        var count = Math.Min(reqCount, allFrames.Length - start);
+
+        var requestedFrames = allFrames.AsSpan(start, count);
+        return new([..requestedFrames]);
+    }
+
+    protected override ThreadsResponse HandleThreadsRequest(ThreadsArguments arguments)
+        => new([new(0, "main")]);
+
+    protected override ScopesResponse HandleScopesRequest(ScopesArguments arguments)
+        => new([]);
 
     protected override TerminateResponse HandleTerminateRequest(TerminateArguments arguments) {
         Debugger?.Stop();

@@ -22,7 +22,7 @@ public record StackTrace(
         // many <line of source code>
         //      <empty line>
         // ^^^^ repeat ^^^^
-        //      nix-repl>
+        //      $prompt
 
         var frames = ImmutableArray.CreateBuilder<StackFrame>();
 
@@ -33,8 +33,8 @@ public record StackTrace(
             var (num, msg) = await ParseStackNumLine(stdout, ct);
             var (file, line, column) = await ParseSourceLocation(stdout, ct);
 
-            // todo: eat lines while they don't start with a non-space character (they're either empty or source code)
-            await EatLine(stdout, ct);
+            // eat lines that don't start with a non-space character (they're either empty or source code)
+            await EatUselessLines(stdout, ct);
 
             var source = new Source() {
                 Name = Path.GetFileName(file),
@@ -50,7 +50,9 @@ public record StackTrace(
                 // PresentationHint = StackFrame.PresentationHintValue.Unknown,
                 CanRestart = false,
             });
-        } while (!await IsRepl(stdout, ct));
+
+            Console.WriteLine(frames[^1].Display());
+        } while (!await dbg.IsAtPrompt(consumeIfPresent: false, ct));
 
         // todo: collapse consecutive lines that point to the exact same location (file+line+column)
 
@@ -61,9 +63,6 @@ public record StackTrace(
         var res = await stdout.ReadLineAsync(ct);
         stdout.AdvanceTo(res.Buffer.End);
     }
-
-    private static async Task<bool> IsRepl(PipeReader stdout, CancellationToken ct)
-        => await stdout.StartsWith(_prompt, ct);
 
     private static async Task<(int num, string msg)> ParseStackNumLine(PipeReader stdout, CancellationToken ct) {
         // $n: $msg
@@ -84,18 +83,17 @@ public record StackTrace(
         return (num, msg);
     }
 
-    // get rid of lines we don't care about: empty lines and source lines
+    // get rid of lines we don't care about: empty lines and source code lines
     private static async Task EatUselessLines(PipeReader stdout, CancellationToken ct) {
         while (true) {
-            var read = await stdout.ReadLineAsync(ct);
+            var read = await stdout.ReadAtLeastAsync(1, ct);
             var buf = read.Buffer;
-            var lineBuf = buf.Slice(buf.Start, buf.Length-1);
 
-            // if the line is empty or starts with a whitespace [it means it's source code extract]
-            if (!lineBuf.IsEmpty || lineBuf.FirstSpan[0] != ' ')
+            if (!buf.IsEmpty && buf.FirstSpan[0] is not ((byte)' ' or (byte)'\n'))
                 break;
-            else
-                stdout.AdvanceTo(buf.End);
+
+            read = await stdout.ReadLineAsync(ct);
+            stdout.AdvanceTo(read.Buffer.End);
         }
     }
 

@@ -21,7 +21,13 @@ public sealed class NixDebugger
 
         Process = new() {
             EnableRaisingEvents = true,
-            StartInfo = new ProcessStartInfo(NIX_BIN, ["eval", "--file", EntryFile, "--debugger", ..Flags]) {
+            StartInfo = new ProcessStartInfo(NIX_BIN, [
+                "--extra-experimental-features", "repl-automation", // note: lix exclusive
+                "eval",
+                "--file", EntryFile,
+                "--debugger",
+                ..Flags
+            ]) {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 RedirectStandardInput = true,
@@ -45,8 +51,8 @@ public sealed class NixDebugger
         logLine($"nix eval started, pid {Process.Id}");
 
         Process.StandardInput.AutoFlush = true; // avoids deadlocks when typing
-        Stdout = PipeReader.Create(Process.StandardOutput.BaseStream);
-        Stderr = PipeReader.Create(Process.StandardError.BaseStream);
+        Stdout = PipeReader.Create(Process.StandardOutput.BaseStream, new(minimumReadSize: 1)); // avoids hangs for prompt and small reads
+        Stderr = PipeReader.Create(Process.StandardError.BaseStream, new(minimumReadSize: 1));
         _cancelSource = new();
 
         await Task.WhenAny(_ListenToStdout(), _ListenToStderr());
@@ -94,72 +100,38 @@ public sealed class NixDebugger
         return read.IsCompleted;
     }
 
-    private static readonly byte[] _prompt = "nix-repl> "u8.ToArray();
     private async Task<bool> _DetectPromptOrReadOutput(CancellationToken ct) {
-        var read = await Stdout!.ReadAsync(ct);
-        var buf = read.Buffer;
-        var reader = new SequenceReader<byte>(buf);
-
-        // if there's no prompt, then it's raw eval output stuff (e.g. program result)
-        if (!await Stdout.StartsWith(_prompt, ct)) {
+        if (await IsAtPrompt(consumeIfPresent: true, ct)) {
+            OnReplPrompt();
+            return await _OnBreak(ct);
+        } else {
+            // if there's no prompt, just treat everything as raw output
             // note: we DON'T advance the reader, so PrintOutputLine() can just read the same thing again
             return await _PrintOutputLine(ct);
         }
-
-        // if there's a prompt, then mark it as consumed, call the prompt callback, and change the state
-        Stdout!.AdvanceTo(buf.GetPosition(offset: 10, buf.Start)); // 10 is the number of chars in the prompt
-        OnReplPrompt();
-        return await _OnBreak(ct);
-    }
-
-    private int _typedChars = 0;
-    private async Task _DiscardTypingEcho(CancellationToken ct) {
-        // the repl prints to stdout the things we type/write into stdin,
-        // so we need some way to "eat" those characters we don't care about
-        // before we can start reading useful stuff
-
-        ReadResult read;
-        do {
-            read = await Stdout!.ReadAsync(ct);
-            var buf = read.Buffer;
-
-            // consume all the characters we can, but no more than that:
-            //   - if `buf` is smaller than the number of chars we typed,
-            //     then only consume `buf.Length` characters, and update
-            //     the value of `_typedChars`
-            //   - if `buf` is bigger than the number of chars we typed,
-            //     then only consume `_typedChars` characters, and set it
-            //     to 0 (since _typedChars - typedChars = 0)
-            var charsToConsume = Math.Min(buf.Length, _typedChars);
-            Stdout!.AdvanceTo(buf.GetPosition(charsToConsume));
-            _typedChars -= (int)charsToConsume;
-        } while (_typedChars != 0 && !read.IsCompleted);
     }
 
     /// <summary>
-    /// Type a line into the REPL.
-    /// WARNING: <strong>This should only be used right after <see cref="OnReplPrompt"/>
-    /// or <see cref="OnBreak"/> has been raised</strong>, to ensure that no other
-    /// methods are trying to read the input. Otherwise, there is a very high chance this
-    /// will completely block/botch the debugger's output parsing.
+    /// Type a line into the REPL. The command should not end with a newline.
     /// </summary>
-    /// <param name="cmd">The command that should be typed into the repl</param>
-    public async Task TypeLine(string cmd, CancellationToken? ct = default) {
+    /// <param name="cmd">The command that should be typed into the repl, without the final newline</param>
+    public Task TypeLine(string cmd, CancellationToken? ct = default)
         // todo: add a locking mechanism to ensure no one tries to write when there's no repl
         // OR when there's multiple things wanting to write (e.g. backtrace parser & user expression)
-        _typedChars += cmd.Length + 1; // +1 for the newline
-        await Process.StandardInput.WriteAsync(cmd + "\n");
-        await _DiscardTypingEcho(ct ?? _cancelSource.Token);
-    }
+        => Process.StandardInput.WriteAsync((cmd + "\n").AsMemory(), ct ?? _cancelSource?.Token ?? default);
+
+    public StackTrace CurrentStackTrace { get; private set; }
 
     public event Action<StackTrace> OnBreak = (_) => {};
     public event Action<StackTrace> OnStep = (_) => {};
     public event Action<StackTrace, string> OnError = (_, _) => {};
 
     private async Task<bool> _OnBreak(CancellationToken ct) {
-        var stacktrace = await StackTrace.CreateFromDebugger(this, ct);
+        CurrentStackTrace = await StackTrace.CreateFromDebugger(this, ct);
 
-        OnBreak(stacktrace);
+        OnBreak(CurrentStackTrace);
+
+        System.Threading.Thread.Sleep(1000000000);
 
         // var envList = await _GetEnvList(ct);
 
@@ -192,5 +164,22 @@ public sealed class NixDebugger
             var buf = read.Buffer;
             Stderr.AdvanceTo(buf.End);
         } while (!read.IsCompleted);
+    }
+
+    internal async Task<bool> IsAtPrompt(bool consumeIfPresent = false, CancellationToken? ct = default) {
+        ct ??= _cancelSource?.Token ?? default;
+
+        var read = await Stdout!.ReadAtLeastAsync(1, ct.Value);
+        var buf = read.Buffer;
+
+        if (buf.IsEmpty)
+            return false;
+
+        var present = buf.First.Span[0] == (byte)'\u0005';
+
+        if (consumeIfPresent && present)
+            Stdout.AdvanceTo(buf.GetPosition(1));
+
+        return present;
     }
 }

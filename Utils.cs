@@ -10,6 +10,11 @@ internal static class Utils
         // first append the starting part of the string that doesn't have
         // any escape, so that the loop always starts with an escape sequence
         var firstEscape = str.IndexOf('\e');
+
+        // if there's no escape in the string, just return it raw
+        if (firstEscape < 0)
+            return str.ToString();
+
         sb.Append(str[..firstEscape]);
 
         foreach (var splitInfo in str[firstEscape..].Split('\e')) {

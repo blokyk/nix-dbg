@@ -51,15 +51,9 @@ public sealed class NixDebugger
 
         logLine($"nix eval started, pid {Process.Id}");
 
-        var rawStdoutStream = Process.StandardOutput.BaseStream;
-        var rawStderrStream = Process.StandardError.BaseStream;
-
-        var logStdoutStream = new InterceptionStream(rawStdoutStream, File.OpenWrite("/home/blokyk/dev/lab/nix-dbg/stdout.log"));
-        var logStderrStream = new InterceptionStream(rawStderrStream, File.OpenWrite("/home/blokyk/dev/lab/nix-dbg/stderr.log"));
-
         Process.StandardInput.AutoFlush = true; // avoids deadlocks when typing
-        Stdout = PipeReader.Create(logStdoutStream, new(minimumReadSize: 1)); // avoids hangs for prompt and small reads
-        Stderr = PipeReader.Create(logStderrStream, new(minimumReadSize: 1));
+        Stdout = PipeReader.Create(Process.StandardOutput.BaseStream, new(minimumReadSize: 1)); // avoids hangs for prompt and small reads
+        Stderr = PipeReader.Create(Process.StandardError.BaseStream, new(minimumReadSize: 1));
         _cancelSource = new();
 
         await Task.WhenAny(_ListenToStdout(), _ListenToStderr());

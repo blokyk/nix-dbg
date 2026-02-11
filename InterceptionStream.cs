@@ -1,3 +1,8 @@
+// Code from Mike Hadlow's 2015 "How to Record What Gets Written to or Read From a Stream"
+// https://mikehadlow.blogspot.com/2015/06/c-how-to-record-what-gets-written-to-or.html
+//
+// Modified to add immediate flushing
+
 public class InterceptionStream : Stream
 {
     public Stream InnerStream { get; private set; }

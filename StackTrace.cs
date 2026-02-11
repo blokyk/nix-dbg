@@ -1,35 +1,45 @@
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
-using System.Buffers;
 using System.Collections.Immutable;
 using System.IO.Pipelines;
-using System.Runtime.CompilerServices;
 using System.Text;
 
 public record StackTrace(
     ImmutableArray<StackFrame> Frames
 ) {
-    private static readonly byte[] _prompt = "nix-repl> "u8.ToArray();
-    public static async Task<StackTrace> CreateFromDebugger(NixDebugger dbg, CancellationToken ct = default) {
+    /// <summary>
+    /// Parse a stack trace (multiple stack traces) out of a backtrace on stdout.
+    /// (The <c>:bt</c> command must have already been triggered.)
+    /// </summary>
+    public static async Task<StackTrace> CreateFromBacktrace(NixDebugger dbg, CancellationToken ct = default) {
         var stdout = dbg.Stdout!; // copy to avoid null checks
 
-        await dbg.TypeLine(":bt");
-        // output is something like this:
-        //      <empty line>
-        // vvvv repeat vvvv
-        //      $n: $msg
-        //      $file:$line:$column
-        //      <empty line>
-        // many <line of source code>
-        //      <empty line>
-        // ^^^^ repeat ^^^^
-        //      $prompt
+        // <empty line>
+        await stdout.EatLine(ct);
 
         var frames = ImmutableArray.CreateBuilder<StackFrame>();
-
-        // <empty line>
-        await EatLine(stdout, ct);
-
         do {
+            var frame = await StackFrame.CreateFromBacktrace(stdout, ct);
+            // todo: collapse consecutive lines that point to the exact same location (file+line+column)
+            frames.Add(frame);
+        } while (!await dbg.CheckIsPrompt(consumeIfPresent: false, ct));
+
+        return new StackTrace(frames.DrainToImmutable());
+    }
+}
+
+public static class StackFrameUtils
+{
+    extension(StackFrame) {
+        /// <summary>
+        /// Parse a single stack frame out of a backtrace on stdout.
+        /// (The <c>:st</c> command must have already been triggered.)
+        /// </summary>
+        public static async Task<StackFrame> CreateFromBacktrace(PipeReader stdout, CancellationToken ct = default) {
+            // format is like this:
+            //      $n: $msg
+            //      $file:$line:$column
+            // many <empty line or line of source code>
+
             var (num, msg) = await ParseStackNumLine(stdout, ct);
             var (file, line, column) = await ParseSourceLocation(stdout, ct);
 
@@ -41,7 +51,7 @@ public record StackTrace(
                 Path = File.Exists(file) ? file : null,
             };
 
-            frames.Add(new StackFrame() {
+            return new StackFrame() {
                 Id = num,
                 Name = msg,
                 Line = line,
@@ -49,19 +59,8 @@ public record StackTrace(
                 Source = source,
                 // PresentationHint = StackFrame.PresentationHintValue.Unknown,
                 CanRestart = false,
-            });
-
-            Console.WriteLine(frames[^1].Display());
-        } while (!await dbg.IsAtPrompt(consumeIfPresent: false, ct));
-
-        // todo: collapse consecutive lines that point to the exact same location (file+line+column)
-
-        return new StackTrace(frames.DrainToImmutable());
-    }
-
-    private static async Task EatLine(PipeReader stdout, CancellationToken ct) {
-        var res = await stdout.ReadLineAsync(ct);
-        stdout.AdvanceTo(res.Buffer.End);
+            };
+        }
     }
 
     private static async Task<(int num, string msg)> ParseStackNumLine(PipeReader stdout, CancellationToken ct) {

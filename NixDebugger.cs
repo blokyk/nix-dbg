@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
+using Microsoft.VisualStudio.Threading;
 using System.Buffers;
 using System.Diagnostics;
 using System.IO.Pipelines;
@@ -34,25 +34,32 @@ public sealed class NixDebugger
                 UseShellExecute = false,
             },
         };
-
-        OnErrorOutput = (msg) => logLine($"stderr: {msg}");
     }
 
     public event Action<int> OnExit = (_) => {};
 
-    internal PipeReader? Stdout;
-    internal PipeReader? Stderr;
+    internal PipeReader? Stdout { get; private set; }
+    internal PipeReader? Stderr { get; private set; }
     private CancellationTokenSource _cancelSource = new();
     public async Task Start() {
-        Process.Exited += (sender, e) => OnExit(Process.ExitCode);
+        Process.Exited += (_, _) => {
+            _cancelSource.CancelAfter(333);
+            OnExit(Process.ExitCode);
+        };
 
         Process.Start();
 
         logLine($"nix eval started, pid {Process.Id}");
 
+        var rawStdoutStream = Process.StandardOutput.BaseStream;
+        var rawStderrStream = Process.StandardError.BaseStream;
+
+        var logStdoutStream = new InterceptionStream(rawStdoutStream, File.OpenWrite("/home/blokyk/dev/lab/nix-dbg/stdout.log"));
+        var logStderrStream = new InterceptionStream(rawStderrStream, File.OpenWrite("/home/blokyk/dev/lab/nix-dbg/stderr.log"));
+
         Process.StandardInput.AutoFlush = true; // avoids deadlocks when typing
-        Stdout = PipeReader.Create(Process.StandardOutput.BaseStream, new(minimumReadSize: 1)); // avoids hangs for prompt and small reads
-        Stderr = PipeReader.Create(Process.StandardError.BaseStream, new(minimumReadSize: 1));
+        Stdout = PipeReader.Create(logStdoutStream, new(minimumReadSize: 1)); // avoids hangs for prompt and small reads
+        Stderr = PipeReader.Create(logStderrStream, new(minimumReadSize: 1));
         _cancelSource = new();
 
         await Task.WhenAny(_ListenToStdout(), _ListenToStderr());
@@ -67,13 +74,11 @@ public sealed class NixDebugger
         logLine("Stopping the nix eval process");
         Process.Kill();
 
-        _cancelSource.Cancel();
+        _cancelSource.CancelAfter(333); // give a little bit of time to print the output
     }
 
-    public event Action<string> OnErrorOutput;
+    public event Action<string> OnErrorOutput = (_) => {};
     public event Action<string> OnOutput = (_) => {};
-
-    public event Action OnReplPrompt = () => {};
 
     private async Task _ListenToStdout() {
         // [x] breakpoint
@@ -84,54 +89,67 @@ public sealed class NixDebugger
         // [x] send the rest to the `OnOutput` event
 
         var cancellationToken = _cancelSource.Token;
-        bool isComplete;
         do {
-            isComplete = await _DetectPromptOrReadOutput(cancellationToken);
-        } while(!isComplete);
+            await _DetectPromptOrReadOutput(cancellationToken);
+        } while(!Stdout!.TryIsCompleted());
     }
 
-    private async Task<bool> _PrintOutputLine(CancellationToken ct) {
+    private async Task _PrintOutputLine(CancellationToken ct) {
         var read = await Stdout!.ReadLineAsync(ct);
         var buf = read.Buffer;
         var bufWithoutNewline = buf.Slice(buf.Start, buf.Length-1);
         var line = Encoding.UTF8.GetString(bufWithoutNewline);
         Stdout!.AdvanceTo(buf.End); // use base `buf` so we can move to *after* the newline
         OnOutput(line);
-        return read.IsCompleted;
     }
 
-    private async Task<bool> _DetectPromptOrReadOutput(CancellationToken ct) {
-        if (await IsAtPrompt(consumeIfPresent: true, ct)) {
-            OnReplPrompt();
-            return await _OnBreak(ct);
+    private async Task _DetectPromptOrReadOutput(CancellationToken ct) {
+        if (await CheckIsPrompt(consumeIfPresent: true, ct)) {
+            await _OnBreak(ct);
         } else {
             // if there's no prompt, just treat everything as raw output
             // note: we DON'T advance the reader, so PrintOutputLine() can just read the same thing again
-            return await _PrintOutputLine(ct);
+            await _PrintOutputLine(ct);
         }
     }
+
+    internal async Task TypeLineNoDelay(string cmd, CancellationToken? ct = default)
+        // todo: add a locking mechanism to ensure no one tries to write when there's no repl
+        // OR when there's multiple things wanting to write (e.g. backtrace parser & user expression)
+        => await Process.StandardInput.WriteAsync(
+            (cmd + "\n").AsMemory(),
+            ct ?? _cancelSource?.Token ?? default
+        );
 
     /// <summary>
     /// Type a line into the REPL. The command should not end with a newline.
     /// </summary>
     /// <param name="cmd">The command that should be typed into the repl, without the final newline</param>
-    public Task TypeLine(string cmd, CancellationToken? ct = default)
-        // todo: add a locking mechanism to ensure no one tries to write when there's no repl
-        // OR when there's multiple things wanting to write (e.g. backtrace parser & user expression)
-        => Process.StandardInput.WriteAsync((cmd + "\n").AsMemory(), ct ?? _cancelSource?.Token ?? default);
+    public async Task TypeLine(string cmd, CancellationToken? ct = default) {
+        // this (arbitrary) delay seems to be needed to avoid the REPL getting overwhelmed
+        // and seemingly running into a fatal race condition when trying to invoke too many
+        // commands at once
+        await Task.Delay(100, ct ?? _cancelSource?.Token ?? default); // 100ms
+        await TypeLineNoDelay(cmd, ct);
+        await Task.Delay(100, ct ?? _cancelSource?.Token ?? default); // 100ms
+    }
 
     public StackTrace CurrentStackTrace { get; private set; }
 
     public event Action<StackTrace> OnBreak = (_) => {};
-    public event Action<StackTrace> OnStep = (_) => {};
     public event Action<StackTrace, string> OnError = (_, _) => {};
 
-    private async Task<bool> _OnBreak(CancellationToken ct) {
-        CurrentStackTrace = await StackTrace.CreateFromDebugger(this, ct);
+    private async Task _OnBreak(CancellationToken ct) {
+        await _UpdateState(ct);
+        _ = Task.Run(() => OnBreak(CurrentStackTrace), ct);
+        await _WaitForContinueOrStep(ct);
+    }
 
-        OnBreak(CurrentStackTrace);
-
-        System.Threading.Thread.Sleep(1000000000);
+    private async Task _UpdateState(CancellationToken ct) {
+        await TypeLine(":bt");
+        logLine("getting backtrace");
+        CurrentStackTrace = await StackTrace.CreateFromBacktrace(this, ct);
+        logLine("backtrace got");
 
         // var envList = await _GetEnvList(ct);
 
@@ -145,28 +163,65 @@ public sealed class NixDebugger
 
         // var varValues = 
         // foreach (var varname in envList[0]) {
-            
         // }
 
         // todo: detect whether we're on break because of an error or because of a breakpoint/trace
 
-        return false;
+        // pause execution instead of returning, so we don't immediately start re-reading stdout (and thus the prompt, triggering _OnBreak again etc)
+    }
+
+    private async Task _WaitForContinueOrStep(CancellationToken ct) {
+        // create a token we'll cancel when the race is done and one of them has won
+        var raceFinishedTokenSource = new CancellationTokenSource();
+        var raceFinishedToken = raceFinishedTokenSource.Token;
+
+        var continueTask = _WaitAndContinue(ct).WithCancellation(raceFinishedToken);
+        var stepTask = _WaitAndStep(ct).WithCancellation(raceFinishedToken);
+
+        // actually run both tasks in a race, and see which one wins first
+        // (double await because it returns a Task<Task>, where the inner task is completed)
+        await await Task.WhenAny(continueTask, stepTask);
+
+        // tell the losing task to stop
+        await raceFinishedTokenSource.CancelAsync();
+    }
+
+    private AsyncAutoResetEvent _continueEvent = new();
+    public void Continue() => _continueEvent.Set();
+    private async Task _WaitAndContinue(CancellationToken ct) {
+        await _continueEvent.WaitAsync(ct);
+        await TypeLine(":c", ct);
+        logLine("continued");
+    }
+
+    private AsyncAutoResetEvent _stepEvent = new();
+    public void Step() => _stepEvent.Set();
+    private async Task _WaitAndStep(CancellationToken ct) {
+        await _stepEvent.WaitAsync(ct);
+        await TypeLine(":s", ct);
+        logLine("stepped");
     }
 
     private async Task _ListenToStderr() {
-        //! 1. detect (non-breakpoint) errors
-        //  2. suppress repl-related messages (e.g. 'info: breakpoint reached' or nix version or 'type :? for help')
-        //  3. parse (error) backtraces
-        //  4. detect error in repl expression (e.g. typed in debug console, watch list, or when expanding values)
+        // todo:
+        // 1. detect (non-breakpoint) errors
+        // 2. suppress repl-related messages (e.g. 'info: breakpoint reached' or nix version or 'type :? for help')
+        // 3. (?) parse (error) backtraces
+        // 4. detect error in repl expression (e.g. typed in debug console, watch list, or when expanding values)
+
+        // discard any stuff from stderr
         ReadResult read;
         do {
             read = await Stderr!.ReadAsync();
             var buf = read.Buffer;
+            var str = Encoding.UTF8.GetString(buf);
+            _ = Task.Run(() => OnErrorOutput(str));
             Stderr.AdvanceTo(buf.End);
         } while (!read.IsCompleted);
     }
 
-    internal async Task<bool> IsAtPrompt(bool consumeIfPresent = false, CancellationToken? ct = default) {
+    private AsyncAutoResetEvent _promptEvent = new();
+    internal async Task<bool> CheckIsPrompt(bool consumeIfPresent = false, CancellationToken? ct = default) {
         ct ??= _cancelSource?.Token ?? default;
 
         var read = await Stdout!.ReadAtLeastAsync(1, ct.Value);
@@ -177,9 +232,13 @@ public sealed class NixDebugger
 
         var present = buf.First.Span[0] == (byte)'\u0005';
 
-        if (consumeIfPresent && present)
-            Stdout.AdvanceTo(buf.GetPosition(1));
-
-        return present;
+        if (present) {
+            if (consumeIfPresent)
+                Stdout.AdvanceTo(buf.GetPosition(1));
+            _promptEvent.Set();
+            return true;
+        } else {
+            return false;
+        }
     }
 }

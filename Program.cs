@@ -1,13 +1,9 @@
-﻿using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol;
-using System.Diagnostics;
-
-if (args is ["--no-dap"]) {
+﻿if (args is ["--no-dap"]) {
     var dbg = new NixDebugger("/home/blokyk/dev/lab/dap/js-sample/sampleWorkspace/default.nix", [], (s) => Console.Error.WriteLine(s));
 
     dbg.OnOutput += (s) => Console.WriteLine(s);
     dbg.OnErrorOutput += (s) => Console.Error.WriteLine(s);
     dbg.OnExit += (code) => Console.Error.WriteLine($"debuggee exited with code {code}");
-    dbg.OnReplPrompt += () => Console.Error.WriteLine("got repl prompt");
     dbg.OnBreak += (trace) => Console.Error.WriteLine($"breakpoint reached in {trace.Frames[0].Display()}");
 
     try {

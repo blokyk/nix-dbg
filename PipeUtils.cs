@@ -40,6 +40,11 @@ internal static class PipeReaderUtils
             return new(finalBuf, read.IsCanceled, read.IsCompleted);
         }
 
+        internal async Task EatLine(CancellationToken ct) {
+            var res = await pipe.ReadLineAsync(ct);
+            pipe.AdvanceTo(res.Buffer.End);
+        }
+
         internal async Task<bool> StartsWith(ReadOnlyMemory<byte> prefix, CancellationToken ct = default) {
             if (prefix.IsEmpty)
                 return true;
@@ -70,5 +75,15 @@ internal static class PipeReaderUtils
             pipe.AdvanceTo(seqReader.Sequence.Start, seqReader.Position);
             return matched == prefix.Length;
         }
+
+        /// <summary>
+        ///     Attempts to synchronously tell whether the <see cref="PipeReader"/> is completed.
+        /// </summary>
+        /// <returns>
+        ///     <see langword="true"/> if the pipe reader is definitely completed;
+        ///     <see langword="false"/> if it's not completed or it couldn't be determined synchronously.
+        /// </returns>
+        internal bool TryIsCompleted()
+            => pipe.TryRead(out var res) && res.IsCompleted;
     }
 }

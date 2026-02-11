@@ -14,7 +14,8 @@ internal class NixDebugAdapter : DebugAdapterBase
     private TextWriter Log;
 
     public NixDebugAdapter(Stream stdin, Stream stdout) {
-      Log = new StreamWriter(File.OpenWrite("/home/blokyk/dev/lab/nix-dbg/log.txt")) { AutoFlush = true };
+        Log = Console.Error;
+    //   Log = new StreamWriter(File.OpenWrite("/home/blokyk/dev/lab/nix-dbg/log.txt")) { AutoFlush = true };
     //   Log = new StreamWriter(File.OpenWrite("/dev/pts/4")) { AutoFlush = true };
       InitializeProtocolClient(stdin, stdout);
 
@@ -141,6 +142,28 @@ internal class NixDebugAdapter : DebugAdapterBase
 
     protected override ScopesResponse HandleScopesRequest(ScopesArguments arguments)
         => new([]);
+
+    protected override ContinueResponse HandleContinueRequest(ContinueArguments arguments) {
+        Debugger?.Continue();
+        // apparently, DAs should not send `ContinuedEvent` when it's as a result of a `Continue` or `Launch` event
+        //Protocol.SendEvent(new ContinuedEvent())
+        return new() { AllThreadsContinued = true };
+    }
+
+    protected override StepInResponse HandleStepInRequest(StepInArguments arguments) {
+        Debugger?.Step();
+        return new(); // ACK
+    }
+
+    protected override StepOutResponse HandleStepOutRequest(StepOutArguments arguments) {
+        Debugger?.Step();
+        return new(); // ACK
+    }
+
+    protected override NextResponse HandleNextRequest(NextArguments arguments) {
+        Debugger?.Step();
+        return new(); // ACK
+    }
 
     protected override TerminateResponse HandleTerminateRequest(TerminateArguments arguments) {
         Debugger?.Stop();

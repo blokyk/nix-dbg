@@ -104,7 +104,7 @@ public sealed class NixDebugger
     }
 
     private async Task _DetectPromptOrReadOutput(CancellationToken ct) {
-        if (await CheckIsPrompt(consumeIfPresent: true, ct)) {
+        if (await RefreshAndCheckPromptStatus(consumeIfPresent: true, ct)) {
             await _OnBreak(ct);
         } else {
             // if there's no prompt, just treat everything as raw output
@@ -113,25 +113,20 @@ public sealed class NixDebugger
         }
     }
 
-    internal async Task TypeLineNoDelay(string cmd, CancellationToken? ct = default)
-        // todo: add a locking mechanism to ensure no one tries to write when there's no repl
-        // OR when there's multiple things wanting to write (e.g. backtrace parser & user expression)
-        => await Process.StandardInput.WriteAsync(
-            (cmd + "\n").AsMemory(),
-            ct ?? _cancelSource?.Token ?? default
-        );
-
     /// <summary>
     /// Type a line into the REPL. The command should not end with a newline.
+    /// This method will only return once the command has started execution.
     /// </summary>
     /// <param name="cmd">The command that should be typed into the repl, without the final newline</param>
     public async Task TypeLine(string cmd, CancellationToken? ct = default) {
-        // this (arbitrary) delay seems to be needed to avoid the REPL getting overwhelmed
-        // and seemingly running into a fatal race condition when trying to invoke too many
-        // commands at once
-        await Task.Delay(100, ct ?? _cancelSource?.Token ?? default); // 100ms
-        await TypeLineNoDelay(cmd, ct);
-        await Task.Delay(100, ct ?? _cancelSource?.Token ?? default); // 100ms
+        // wait for the prompt to be available
+        await _promptEvent.WaitAsync(ct ?? _cancelSource?.Token ?? default);
+        // todo: add a locking mechanism to ensure no one tries to write when there's no repl
+        // OR when there's multiple things wanting to write (e.g. backtrace parser & user expression)
+        await Process.StandardInput.WriteAsync(
+            (cmd + "\n").AsMemory(),
+            ct ?? _cancelSource?.Token ?? default
+        );
     }
 
     public StackTrace CurrentStackTrace { get; private set; }
@@ -221,7 +216,10 @@ public sealed class NixDebugger
     }
 
     private AsyncAutoResetEvent _promptEvent = new();
-    internal async Task<bool> CheckIsPrompt(bool consumeIfPresent = false, CancellationToken? ct = default) {
+    internal async Task<bool> RefreshAndCheckPromptStatus(
+        bool consumeIfPresent = false,
+        CancellationToken? ct = default
+    ) {
         ct ??= _cancelSource?.Token ?? default;
 
         var read = await Stdout!.ReadAtLeastAsync(1, ct.Value);

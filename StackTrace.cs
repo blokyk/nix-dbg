@@ -21,7 +21,7 @@ public record StackTrace(
             var frame = await StackFrame.CreateFromBacktrace(stdout, ct);
             // todo: collapse consecutive lines that point to the exact same location (file+line+column)
             frames.Add(frame);
-        } while (!await dbg.CheckIsPrompt(consumeIfPresent: false, ct));
+        } while (!await dbg.RefreshAndCheckPromptStatus(consumeIfPresent: false, ct));
 
         return new StackTrace(frames.DrainToImmutable());
     }

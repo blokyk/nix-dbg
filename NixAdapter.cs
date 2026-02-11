@@ -93,16 +93,14 @@ internal class NixDebugAdapter : DebugAdapterBase
             (msg) => Protocol.SendEvent(new OutputEvent() { Output = msg, Category = OutputEvent.CategoryValue.Stdout });
 
         Debugger.OnBreak +=
-            (trace) => {
-                Protocol.SendEvent(new StoppedEvent() {
-                    AllThreadsStopped = true,
-                    Reason = StoppedEvent.ReasonValue.Breakpoint,
-                    Description = "Breakpoint reached",
-                });
-            };
+            () => Protocol.SendEvent(new StoppedEvent() {
+                AllThreadsStopped = true,
+                Reason = StoppedEvent.ReasonValue.Breakpoint,
+                Description = "Breakpoint reached",
+            });
 
         Debugger.OnError +=
-            (trace, msg) => Protocol.SendEvent(new StoppedEvent() {
+            (msg) => Protocol.SendEvent(new StoppedEvent() {
                 AllThreadsStopped = true,
                 Reason = StoppedEvent.ReasonValue.Exception,
                 Description = "Error reached",
@@ -122,20 +120,24 @@ internal class NixDebugAdapter : DebugAdapterBase
         return new(); // ACK
     }
 
-    protected override StackTraceResponse HandleStackTraceRequest(StackTraceArguments arguments) {
-        var allFrames = Debugger?.CurrentStackTrace?.Frames ?? [];
+    protected override void HandleStackTraceRequestAsync(IRequestResponder<StackTraceArguments, StackTraceResponse> responder)
+        => _ = Task.Run(async () => {
+            var args = responder.Arguments;
 
-        var reqStart = arguments.StartFrame ?? 0;
-        // if `Levels` is 0 or null, then we should return all the frames; otherwise, we only return a limited number of frames
-        var reqCount = arguments.Levels is 0 or null ? allFrames.Length : arguments.Levels.Value;
+            var trace = await Debugger!.GetStackTrace();
+            var allFrames = trace.Frames;
 
-        // clamp the start idx and count so it doesn't exceed the real frame count
-        var start = Math.Min(reqStart, allFrames.Length - 1);
-        var count = Math.Min(reqCount, allFrames.Length - start);
+            var reqStart = args.StartFrame ?? 0;
+            // if `Levels` is 0 or null, then we should return all the frames; otherwise, we only return a limited number of frames
+            var reqCount = args.Levels is 0 or null ? allFrames.Length : args.Levels.Value;
 
-        var requestedFrames = allFrames.AsSpan(start, count);
-        return new([..requestedFrames]);
-    }
+            // clamp the start idx and count so it doesn't exceed the real frame count
+            var start = Math.Min(reqStart, allFrames.Length - 1);
+            var count = Math.Min(reqCount, allFrames.Length - start);
+
+            var requestedFrames = allFrames.AsSpan(start, count);
+            responder.SetResponse(new([..requestedFrames]));
+        });
 
     protected override ThreadsResponse HandleThreadsRequest(ThreadsArguments arguments)
         => new([new(0, "main")]);

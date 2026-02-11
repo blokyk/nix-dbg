@@ -4,7 +4,7 @@
     dbg.OnOutput += (s) => Console.WriteLine(s);
     dbg.OnErrorOutput += (s) => Console.Error.WriteLine(s);
     dbg.OnExit += (code) => Console.Error.WriteLine($"debuggee exited with code {code}");
-    dbg.OnBreak += (trace) => Console.Error.WriteLine($"breakpoint reached in {trace.Frames[0].Display()}");
+    dbg.OnBreak += () => Console.Error.WriteLine($"breakpoint reached!");
 
     try {
         await dbg.Start();

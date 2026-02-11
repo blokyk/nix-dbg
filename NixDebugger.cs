@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
 using Microsoft.VisualStudio.Threading;
 using System.Buffers;
 using System.Diagnostics;
@@ -9,7 +10,8 @@ public sealed class NixDebugger
 {
     private const string NIX_BIN = "/nix/var/nix/profiles/default/bin/nix";
 
-    private readonly Action<string> logLine;
+    // fixme: this is only for debugging
+    internal readonly Action<string> logLine;
 
     public string EntryFile;
     public IEnumerable<string> Flags;
@@ -114,50 +116,31 @@ public sealed class NixDebugger
     /// </summary>
     /// <param name="cmd">The command that should be typed into the repl, without the final newline</param>
     public async Task TypeLine(string cmd, CancellationToken? ct = default) {
+        if (ct != _cancelSource.Token)
+            ct = _cancelSource.Token.CombineWith(ct ?? default).Token;
+
         // wait for the prompt to be available
-        await _promptEvent.WaitAsync(ct ?? _cancelSource?.Token ?? default);
+        await _promptEvent.WaitAsync(ct.Value);
         // todo: add a locking mechanism to ensure no one tries to write when there's no repl
         // OR when there's multiple things wanting to write (e.g. backtrace parser & user expression)
         await Process.StandardInput.WriteAsync(
             (cmd + "\n").AsMemory(),
-            ct ?? _cancelSource?.Token ?? default
+            ct.Value
         );
     }
 
-    public StackTrace? CurrentStackTrace { get; private set; }
-
-    public event Action<StackTrace> OnBreak = (_) => {};
-    public event Action<StackTrace, string> OnError = (_, _) => {};
+    public event Action OnBreak = () => {};
+    public event Action<string> OnError = (_) => {};
 
     private async Task _OnBreak(CancellationToken ct) {
-        await _UpdateState(ct);
-        _ = Task.Run(() => OnBreak(CurrentStackTrace!), ct);
+        _ = Task.Run(() => OnBreak(), ct);
         await _WaitForContinueOrStep(ct);
     }
 
-    private async Task _UpdateState(CancellationToken ct) {
+    public async Task<StackTrace> GetStackTrace(CancellationToken? ct = default) {
+        ct = _cancelSource.Token.CombineWith(ct ?? default).Token;
         await TypeLine(":bt");
-        logLine("getting backtrace");
-        CurrentStackTrace = await StackTrace.CreateFromBacktrace(this, ct);
-        logLine("backtrace got");
-
-        // var envList = await _GetEnvList(ct);
-
-        // fixme: how the FUCK do we map environment scopes to stack frames???
-        // (this should be `foreach (var frame in stacktrace) { foreach (var varName in envList[frame]) }`)
-        //
-        // idea: in theory, "all" we need to do is detect which frames are inside of a not-yet-seen lexical scope.
-        //       however, in practice this'd probably require parsing :(
-        //
-        // idea: another way to do this would be to iterate through all frames with `:st <n>` and check the 0th env frame every time
-
-        // var varValues = 
-        // foreach (var varname in envList[0]) {
-        // }
-
-        // todo: detect whether we're on break because of an error or because of a breakpoint/trace
-
-        // pause execution instead of returning, so we don't immediately start re-reading stdout (and thus the prompt, triggering _OnBreak again etc)
+        return await StackTrace.CreateFromBacktrace(this, ct.Value);
     }
 
     private async Task _WaitForContinueOrStep(CancellationToken ct) {
@@ -215,7 +198,7 @@ public sealed class NixDebugger
         bool consumeIfPresent = false,
         CancellationToken? ct = default
     ) {
-        ct ??= _cancelSource?.Token ?? default;
+        ct = _cancelSource.Token.CombineWith(ct ?? default).Token;
 
         var read = await Stdout!.ReadAtLeastAsync(1, ct.Value);
         var buf = read.Buffer;

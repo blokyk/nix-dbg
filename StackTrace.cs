@@ -18,7 +18,7 @@ public record StackTrace(
 
         var frames = ImmutableArray.CreateBuilder<StackFrame>();
         do {
-            var frame = await StackFrame.CreateFromBacktrace(stdout, ct);
+            var frame = await StackFrame.CreateFromBacktrace(dbg, ct);
             // todo: collapse consecutive lines that point to the exact same location (file+line+column)
             frames.Add(frame);
         } while (!await dbg.RefreshAndCheckPromptStatus(consumeIfPresent: false, ct));
@@ -34,7 +34,8 @@ public static class StackFrameUtils
         /// Parse a single stack frame out of a backtrace on stdout.
         /// (The <c>:st</c> command must have already been triggered.)
         /// </summary>
-        public static async Task<StackFrame> CreateFromBacktrace(PipeReader stdout, CancellationToken ct = default) {
+        public static async Task<StackFrame> CreateFromBacktrace(NixDebugger dbg, CancellationToken ct = default) {
+            var stdout = dbg.Stdout!;
             // format is like this:
             //      $n: $msg
             //      $file:$line:$column
@@ -43,8 +44,12 @@ public static class StackFrameUtils
             var (num, msg) = await ParseStackNumLine(stdout, ct);
             var (file, line, column) = await ParseSourceLocation(stdout, ct);
 
+            dbg.logLine($"read stack frame info {num}, gonna slurp all the useless lines...");
+
             // eat lines that don't start with a non-space character (they're either empty or source code)
-            await EatUselessLines(stdout, ct);
+            await EatUselessLines(dbg.logLine, stdout, ct);
+
+            dbg.logLine($"lines slurped!");
 
             var source = new Source() {
                 Name = Path.GetFileName(file),
@@ -83,16 +88,22 @@ public static class StackFrameUtils
     }
 
     // get rid of lines we don't care about: empty lines and source code lines
-    private static async Task EatUselessLines(PipeReader stdout, CancellationToken ct) {
+    private static async Task EatUselessLines(Action<string> log, PipeReader stdout, CancellationToken ct) {
         while (true) {
+            log("waiting for at least one char...");
             var read = await stdout.ReadAtLeastAsync(1, ct);
             var buf = read.Buffer;
+
+            stdout.AdvanceTo(buf.Start);
 
             if (!buf.IsEmpty && buf.FirstSpan[0] is not ((byte)' ' or (byte)'\n'))
                 break;
 
-            read = await stdout.ReadLineAsync(ct);
+            log($"it *is* a useless line (char was 0x{buf.FirstSpan[0]:x} btw)");
+
+            read = await stdout.ReadLineAsyncDebug(log, ct);
             stdout.AdvanceTo(read.Buffer.End);
+            log("useless line read, onto the next!");
         }
     }
 

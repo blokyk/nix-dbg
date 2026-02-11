@@ -1,4 +1,6 @@
-﻿if (args is ["--no-dap"]) {
+﻿using Blokyk.NixDebugAdapter;
+
+if (args is ["--no-dap"]) {
     var dbg = new NixDebugger("/home/blokyk/dev/lab/dap/js-sample/sampleWorkspace/default.nix", [], (s) => Console.Error.WriteLine(s));
 
     dbg.OnOutput += (s) => Console.WriteLine(s);

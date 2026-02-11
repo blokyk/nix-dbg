@@ -6,6 +6,8 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipelines;
 using System.Text;
 
+namespace Blokyk.NixDebugAdapter;
+
 public sealed class NixDebugger
 {
     private const string NIX_BIN = "/nix/var/nix/profiles/default/bin/nix";

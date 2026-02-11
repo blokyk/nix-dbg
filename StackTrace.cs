@@ -3,6 +3,8 @@ using System.Collections.Immutable;
 using System.IO.Pipelines;
 using System.Text;
 
+namespace Blokyk.NixDebugAdapter;
+
 public record StackTrace(
     ImmutableArray<StackFrame> Frames
 ) {

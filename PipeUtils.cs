@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.IO.Pipelines;
-using System.Text;
+
+namespace Blokyk.NixDebugAdapter;
 
 internal static class PipeReaderUtils
 {

@@ -9,6 +9,8 @@ using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Threading.Channels;
 
+namespace Blokyk.NixDebugAdapter;
+
 internal class NixDebugAdapter : DebugAdapterBase
 {
     private TextWriter Log;

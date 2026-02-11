@@ -3,6 +3,8 @@
 //
 // Modified to add immediate flushing
 
+namespace Blokyk.NixDebugAdapter;
+
 public class InterceptionStream : Stream
 {
     public Stream InnerStream { get; private set; }

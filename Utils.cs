@@ -2,6 +2,8 @@ using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
 using System.Buffers;
 using System.Text;
 
+namespace Blokyk.NixDebugAdapter;
+
 internal static class Utils
 {
     public static string StripANSI(ReadOnlySpan<char> str) {

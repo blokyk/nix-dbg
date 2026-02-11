@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio.Threading;
 using System.Buffers;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipelines;
 using System.Text;
 
@@ -123,14 +124,14 @@ public sealed class NixDebugger
         );
     }
 
-    public StackTrace CurrentStackTrace { get; private set; }
+    public StackTrace? CurrentStackTrace { get; private set; }
 
     public event Action<StackTrace> OnBreak = (_) => {};
     public event Action<StackTrace, string> OnError = (_, _) => {};
 
     private async Task _OnBreak(CancellationToken ct) {
         await _UpdateState(ct);
-        _ = Task.Run(() => OnBreak(CurrentStackTrace), ct);
+        _ = Task.Run(() => OnBreak(CurrentStackTrace!), ct);
         await _WaitForContinueOrStep(ct);
     }
 

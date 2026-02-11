@@ -123,7 +123,7 @@ internal class NixDebugAdapter : DebugAdapterBase
     }
 
     protected override StackTraceResponse HandleStackTraceRequest(StackTraceArguments arguments) {
-        var allFrames = Debugger!.CurrentStackTrace.Frames;
+        var allFrames = Debugger?.CurrentStackTrace?.Frames ?? [];
 
         var reqStart = arguments.StartFrame ?? 0;
         // if `Levels` is 0 or null, then we should return all the frames; otherwise, we only return a limited number of frames

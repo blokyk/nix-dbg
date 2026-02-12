@@ -167,15 +167,20 @@ public sealed class NixDebugger
     }
 
     public async Task<string> GetType(string expr, CancellationToken? ct = default) {
-        ct = _cancelSource.Token.CombineWith(ct ?? default).Token;
         // yes, we could use ':t', but for our use-case it's actually more convenient
         // and less confusing for the user if we use `typeOf`.
         // (also we use `:p` to get a raw value instead of a quoted string)
-        await TypeLine(":p builtins.typeOf (" + expr + ")");
+        // note: this has to be all in one line, because `repl-automation` doesn't allow multiline code
+        const string typeOf =
+            """v: if(v.type or null == "derivation")then(v.type)else(builtins.typeOf v)""";
+            //  ^^ we have to have a space here because of url literals... ಠ_ಠ
+
+        ct = _cancelSource.Token.CombineWith(ct ?? default).Token;
+        await TypeLine($":p ({typeOf}) ({expr})");
 
         var res = await Stdout.ReadLineAsync();
         var buf = res.Buffer;
-        var typeStr = Encoding.UTF8.GetString(buf)[1..^1]; // `1` for leading
+        var typeStr = Encoding.UTF8.GetString(buf)[1..^1]; // `1` for leading prompt U+0005, `^1` for trailing newline
         Stdout.AdvanceTo(buf.End);
 
         await Stdout.EatLine(ct.Value); // there's an empty line afterwards

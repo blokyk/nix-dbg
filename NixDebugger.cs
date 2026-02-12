@@ -57,8 +57,11 @@ public sealed class NixDebugger
 
         logLine($"nix eval started, pid {Process.Id}");
 
+        var logStream = File.OpenWrite("/home/blokyk/dev/lab/nix-dbg/stdout.log");
+        var fakeStdout = new InterceptionStream(Process.StandardOutput.BaseStream, logStream);
+
         Process.StandardInput.AutoFlush = true; // avoids deadlocks when typing
-        Stdout = PipeReader.Create(Process.StandardOutput.BaseStream, new(minimumReadSize: 1)); // avoids hangs for prompt and small reads
+        Stdout = PipeReader.Create(fakeStdout, new(minimumReadSize: 1)); // avoids hangs for prompt and small reads
         Stderr = PipeReader.Create(Process.StandardError.BaseStream, new(minimumReadSize: 1));
         _cancelSource = new();
 
@@ -124,12 +127,12 @@ public sealed class NixDebugger
 
         // await Task.Delay(100);
         // wait for the prompt to be available
+        // fixme: we need to eat the prompt (either before or after typing, idk)
         await WaitForPrompt(ct.Value);
         await Process.StandardInput.WriteAsync(
             (cmd + "\n").AsMemory(),
             ct.Value
         );
-        // await Task.Delay(100);
     }
 
     public event Action OnBreak = () => {};
@@ -161,6 +164,24 @@ public sealed class NixDebugger
         var var = default(Variable);
         await RefreshAndCheckPromptStatus(ct: ct);
         return var!;
+    }
+
+    public async Task<string> GetType(string expr, CancellationToken? ct = default) {
+        ct = _cancelSource.Token.CombineWith(ct ?? default).Token;
+        // yes, we could use ':t', but for our use-case it's actually more convenient
+        // and less confusing for the user if we use `typeOf`.
+        // (also we use `:p` to get a raw value instead of a quoted string)
+        await TypeLine(":p builtins.typeOf (" + expr + ")");
+
+        var res = await Stdout.ReadLineAsync();
+        var buf = res.Buffer;
+        var typeStr = Encoding.UTF8.GetString(buf)[1..^1]; // `1` for leading
+        Stdout.AdvanceTo(buf.End);
+
+        await Stdout.EatLine(ct.Value); // there's an empty line afterwards
+        await RefreshAndCheckPromptStatus(ct: ct);
+
+        return typeStr;
     }
 
     private async Task _WaitForContinueOrStep(CancellationToken ct) {
@@ -216,9 +237,11 @@ public sealed class NixDebugger
     }
 
     private AsyncAutoResetEvent _promptEvent = new();
-    internal Task WaitForPrompt(CancellationToken ct) {
+    internal async Task WaitForPrompt(CancellationToken ct) {
         logLine("someone is waiting for the prompt...");
-        return _promptEvent.WaitAsync(ct);
+        await _promptEvent.WaitAsync(ct);
+        // if (consumePrompt && Stdout!.TryRead(out var read))
+        //     Stdout.AdvanceTo(read.Buffer.GetPosition(1));
         // return Task.Delay(100); // 100ms // fuck this, fuck life, fuck everything
     }
 

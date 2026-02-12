@@ -75,7 +75,7 @@ public static class StackFrameUtils
 
         // .AsSpan makes sure that line[..numEnd] is .Split and not .Substring
         // and [..^1] allows us to exclude the final newline (buf.Slice is more expansive)
-        var line = Encoding.UTF8.GetString(buf).AsSpan()[..^1];
+        var line = Encoding.UTF8.GetString(buf).AsSpan(..^1);
         line = Utils.StripANSI(line);
 
         var numEnd = line.IndexOf(':');
@@ -109,7 +109,7 @@ public static class StackFrameUtils
         var res = await stdout.ReadLineAsync(ct);
         var buf = res.Buffer;
 
-        var line = Encoding.UTF8.GetString(buf).AsSpan()[..^1]; // AsSpan: get span-y .Split(); ..^1: drop final newline
+        var line = Encoding.UTF8.GetString(buf).AsSpan(..^1); // AsSpan: get span-y .Split(); ..^1: drop final newline
         line = Utils.StripANSI(line);
 
         Span<Range> partsPos = stackalloc Range[3];

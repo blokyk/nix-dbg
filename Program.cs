@@ -34,5 +34,5 @@ try {
 } catch (Exception e) {
     File.WriteAllText("/home/blokyk/dev/lab/nix-dbg/log.txt", e.Message);
 } finally {
-    File.WriteAllText("/dev/pts/3", "nix-dbg exited");
+    // File.WriteAllText("/dev/pts/3", "nix-dbg exited");
 }

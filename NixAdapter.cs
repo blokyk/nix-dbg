@@ -175,35 +175,44 @@ internal class NixDebugAdapter : DebugAdapterBase
 
     private static DAPScope ToDAPScope(Scope scope) {
         try {
-        return new() {
-            Name = $"Level {scope.Level}",
-            VariablesReference = scope.Level,
-            NamedVariables = scope.Variables.Length,
-            Expensive = scope.Variables.Length > 25,
-            PresentationHint = DAPScope.PresentationHintValue.Locals,
-        };
+            return new() {
+                Name = $"Level {scope.Level}",
+                VariablesReference = scope.Level,
+                NamedVariables = scope.Variables.Length,
+                Expensive = scope.Variables.Length > 10,
+                PresentationHint = DAPScope.PresentationHintValue.Locals,
+            };
         } catch (Exception e) {
             throw AsProtocolException(e);
         }
     }
 
-    protected override VariablesResponse HandleVariablesRequest(VariablesArguments arguments) {
-        try {
-            // todo: remove this when implementing arrays exploration
-            Debug.Assert(arguments.Filter is not VariablesArguments.FilterValue.Indexed);
+    protected override void HandleVariablesRequestAsync(IRequestResponder<VariablesArguments, VariablesResponse> responder)
+        => _ = Task.Run(async () => {
+            try {
+                var args = responder.Arguments;
+                // todo: remove this when implementing arrays exploration
+                Debug.Assert(args.Filter is not VariablesArguments.FilterValue.Indexed);
 
-            var scope = Scopes[arguments.VariablesReference];
+                var scope = Scopes[args.VariablesReference];
 
-            var dapVars = scope.Variables
-                .Skip(arguments.Start ?? 0)
-                .Take(arguments.Count is 0 or null ? scope.Variables.Length : arguments.Count.Value)
-                .Select(v => new DAPVariable() { Name = v, Type = "idk", Value = "", EvaluateName = $"\"{v}\"" });
+                var dapVars = scope.Variables
+                    .Skip(args.Start ?? 0)
+                    .Take(args.Count is 0 or null ? scope.Variables.Length : args.Count.Value)
+                    .Select(v => new DAPVariable() { Name = v, Value = "", EvaluateName = v })
+                    .ToList();
 
-            return new([.. dapVars]);
-        } catch (Exception e) {
-            throw AsProtocolException(e);
-        }
-    }
+                var timeout = args.Timeout is null or -1 ? TimeSpan.MaxValue.Milliseconds : args.Timeout.Value;
+                foreach (var var in dapVars) {
+                    var ctSource = new CancellationTokenSource(timeout);
+                    var.Type = await Debugger!.GetType(var.EvaluateName, ctSource.Token);
+                }
+
+                responder.SetResponse(new(dapVars));
+            } catch (Exception e) {
+                responder.SetError(AsProtocolException(e));
+            }
+        });
 
     protected override EvaluateResponse HandleEvaluateRequest(EvaluateArguments arguments) {
         return new("todo: eval", 0);

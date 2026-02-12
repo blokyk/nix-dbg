@@ -67,7 +67,7 @@ public record Scope(int Level, ImmutableArray<string> Variables)
 
         // .AsSpan makes sure that line[..numEnd] is .Split and not .Substring
         // and [..^1] allows us to exclude the final newline (buf.Slice is more expansive)
-        var line = Encoding.UTF8.GetString(buf).AsSpan()[..^1];
+        var line = Encoding.UTF8.GetString(buf).AsSpan(..^1);
         line = Utils.StripANSI(line);
 
         var levelIdx = line.IndexOfAny(_digits);

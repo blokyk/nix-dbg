@@ -20,7 +20,9 @@ internal static class Utils
 
         sb.Append(str[..firstEscape]);
 
-        foreach (var splitInfo in str[firstEscape..].Split('\e')) {
+        str = str[firstEscape..];
+
+        foreach (var splitInfo in str.Split('\e')) {
             var part = str[splitInfo.Start..splitInfo.End];
             var escapeLength = part.IndexOf('m') + 1;
             sb.Append(part[escapeLength..]);

@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
 using Microsoft.VisualStudio.Threading;
 using System.Buffers;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipelines;
@@ -57,8 +58,8 @@ public sealed class NixDebugger
         logLine($"nix eval started, pid {Process.Id}");
 
         Process.StandardInput.AutoFlush = true; // avoids deadlocks when typing
-        Stdout = PipeReader.Create(Process.StandardOutput.BaseStream, new(minimumReadSize: 1)); // avoids hangs for prompt and small reads
-        Stderr = PipeReader.Create(Process.StandardError.BaseStream, new(minimumReadSize: 1));
+        Stdout = PipeReader.Create(Process.StandardOutput.BaseStream, new(minimumReadSize: 1, useZeroByteReads: true)); // avoids hangs for prompt and small reads
+        Stderr = PipeReader.Create(Process.StandardError.BaseStream, new(minimumReadSize: 1, useZeroByteReads: true));
         _cancelSource = new();
 
         await Task.WhenAny(_ListenToStdout(), _ListenToStderr());
@@ -121,14 +122,14 @@ public sealed class NixDebugger
         if (ct != _cancelSource.Token)
             ct = _cancelSource.Token.CombineWith(ct ?? default).Token;
 
+        // await Task.Delay(100);
         // wait for the prompt to be available
-        await _promptEvent.WaitAsync(ct.Value);
-        // todo: add a locking mechanism to ensure no one tries to write when there's no repl
-        // OR when there's multiple things wanting to write (e.g. backtrace parser & user expression)
+        await WaitForPrompt(ct.Value);
         await Process.StandardInput.WriteAsync(
             (cmd + "\n").AsMemory(),
             ct.Value
         );
+        // await Task.Delay(100);
     }
 
     public event Action OnBreak = () => {};
@@ -142,7 +143,24 @@ public sealed class NixDebugger
     public async Task<StackTrace> GetStackTrace(CancellationToken? ct = default) {
         ct = _cancelSource.Token.CombineWith(ct ?? default).Token;
         await TypeLine(":bt");
-        return await StackTrace.CreateFromBacktrace(this, ct.Value);
+        var trace = await StackTrace.CreateFromBacktrace(this, ct.Value);
+        await RefreshAndCheckPromptStatus(ct: ct);
+        return trace;
+    }
+
+    public async Task<ImmutableArray<Scope>> GetScopes(CancellationToken? ct = default) {
+        ct = _cancelSource.Token.CombineWith(ct ?? default).Token;
+        await TypeLine(":env");
+        var env = await Scope.CreateListFromEnv(this, ct.Value);
+        await RefreshAndCheckPromptStatus(ct: ct);
+        return env;
+    }
+
+    public async Task<Variable> GetVariable(string name, CancellationToken? ct = default) {
+        ct = _cancelSource.Token.CombineWith(ct ?? default).Token;
+        var var = default(Variable);
+        await RefreshAndCheckPromptStatus(ct: ct);
+        return var!;
     }
 
     private async Task _WaitForContinueOrStep(CancellationToken ct) {
@@ -166,6 +184,7 @@ public sealed class NixDebugger
     private async Task _WaitAndContinue(CancellationToken ct) {
         await _continueEvent.WaitAsync(ct);
         await TypeLine(":c", ct);
+        await RefreshAndCheckPromptStatus(ct: ct);
         logLine("continued");
     }
 
@@ -174,6 +193,7 @@ public sealed class NixDebugger
     private async Task _WaitAndStep(CancellationToken ct) {
         await _stepEvent.WaitAsync(ct);
         await TypeLine(":s", ct);
+        await RefreshAndCheckPromptStatus(ct: ct);
         logLine("stepped");
     }
 
@@ -196,13 +216,23 @@ public sealed class NixDebugger
     }
 
     private AsyncAutoResetEvent _promptEvent = new();
+    internal Task WaitForPrompt(CancellationToken ct) {
+        logLine("someone is waiting for the prompt...");
+        return _promptEvent.WaitAsync(ct);
+    }
+
     internal async Task<bool> RefreshAndCheckPromptStatus(
         bool consumeIfPresent = false,
         CancellationToken? ct = default
     ) {
         ct = _cancelSource.Token.CombineWith(ct ?? default).Token;
 
-        var read = await Stdout!.ReadAtLeastAsync(1, ct.Value);
+        logLine("checking for prompt...");
+        if (!Stdout!.TryRead(out var read)) {
+            logLine("(having to do it async-ly)");
+            read = await Stdout!.ReadAtLeastAsync(1, ct.Value);
+        }
+
         var buf = read.Buffer;
 
         if (buf.IsEmpty)
@@ -211,6 +241,7 @@ public sealed class NixDebugger
         var present = buf.First.Span[0] == (byte)'\u0005';
 
         if (present) {
+            logLine("prompt found");
             if (consumeIfPresent)
                 Stdout.AdvanceTo(buf.GetPosition(1));
             _promptEvent.Set();

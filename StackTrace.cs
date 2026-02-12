@@ -46,10 +46,8 @@ public static class StackFrameUtils
             var (num, msg) = await ParseStackNumLine(stdout, ct);
             var (file, line, column) = await ParseSourceLocation(stdout, ct);
 
-            dbg.logLine($"read stack frame info {num}, gonna slurp all the useless lines...");
-
             // eat lines that don't start with a non-space character (they're either empty or source code)
-            await EatUselessLines(dbg.logLine, stdout, ct);
+            await EatUselessLines(stdout, ct);
 
             dbg.logLine($"lines slurped!");
 
@@ -90,9 +88,8 @@ public static class StackFrameUtils
     }
 
     // get rid of lines we don't care about: empty lines and source code lines
-    private static async Task EatUselessLines(Action<string> log, PipeReader stdout, CancellationToken ct) {
+    private static async Task EatUselessLines(PipeReader stdout, CancellationToken ct) {
         while (true) {
-            log("waiting for at least one char...");
             var read = await stdout.ReadAtLeastAsync(1, ct);
             var buf = read.Buffer;
 
@@ -101,11 +98,8 @@ public static class StackFrameUtils
             if (!buf.IsEmpty && buf.FirstSpan[0] is not ((byte)' ' or (byte)'\n'))
                 break;
 
-            log($"it *is* a useless line (char was 0x{buf.FirstSpan[0]:x} btw)");
-
-            read = await stdout.ReadLineAsyncDebug(log, ct);
+            read = await stdout.ReadLineAsync(ct);
             stdout.AdvanceTo(read.Buffer.End);
-            log("useless line read, onto the next!");
         }
     }
 

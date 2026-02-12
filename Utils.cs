@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
 using System.Buffers;
+using System.Collections.Immutable;
 using System.Text;
 
 namespace Blokyk.NixDebugAdapter;
@@ -26,6 +27,21 @@ internal static class Utils
         }
 
         return sb.ToString();
+    }
+
+    extension<T>(ImmutableArray<T> arr) {
+        /// <summary>
+        /// Given a start index and length, take a slice out of an <see cref="ImmutableArray{T}"/>,
+        /// while avoiding out-of-bounds errors by clamping it to the bounds of the array.
+        /// </summary>
+        public ReadOnlySpan<T> ClampedSpan(int? start = null, int? count = null, bool zeroCountIsMax = true) {
+            var realStart = Math.Min(start ?? 0, arr.Length - 1);
+            var tmpCount = zeroCountIsMax
+                ? (count is null or 0 ? arr.Length : count.Value)
+                : (count is null ? arr.Length : count.Value);
+            var realCount = Math.Min(tmpCount, arr.Length - realStart);
+            return arr.AsSpan(realStart, realCount);
+        }
     }
 
     extension(StackFrame frame) {

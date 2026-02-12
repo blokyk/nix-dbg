@@ -159,11 +159,14 @@ public sealed class NixDebugger
         return env;
     }
 
-    public async Task<Variable> GetVariable(string name, CancellationToken? ct = default) {
+    public async Task<NixValue> GetValue(string expr, CancellationToken? ct = default) {
         ct = _cancelSource.Token.CombineWith(ct ?? default).Token;
-        var var = default(Variable);
+
+        await TypeLine(expr);
+        var value = await NixValue.CreateFromEval(this, ct.Value);
+
         await RefreshAndCheckPromptStatus(ct: ct);
-        return var!;
+        return value;
     }
 
     public async Task<string> GetType(string expr, CancellationToken? ct = default) {

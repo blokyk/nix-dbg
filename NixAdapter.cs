@@ -177,6 +177,9 @@ internal class NixDebugAdapter : DebugAdapterBase
     private static DAPScope ToDAPScope(Scope scope) {
         try {
             return new() {
+                // maybe we should instead number them in reverse, so that they stay stable across steps
+                // (i.e. if a user opens "level 1" on one step, and then steps into a deeper scope,
+                // "level 1" still have the same stuff (and in fact, vscode leaves the scope open between steps))
                 Name = $"Level {scope.Level}",
                 VariablesReference = scope.Level,
                 NamedVariables = scope.Variables.Length,

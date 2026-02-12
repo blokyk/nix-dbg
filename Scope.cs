@@ -31,7 +31,11 @@ public record Scope(int Level, ImmutableArray<string> Variables)
             var res = await stdout.ReadAtLeastAsync(1, ct);
             var buf = res.Buffer;
             var cond = buf.IsEmpty || buf.FirstSpan[0] == '\n';
-            stdout.AdvanceTo(buf.Start);
+            // if it is an empty line, consume it, otherwise don't
+            if (cond)
+                stdout.AdvanceTo(buf.GetPosition(1));
+            else
+                stdout.AdvanceTo(buf.Start);
             return cond;
         }
     }

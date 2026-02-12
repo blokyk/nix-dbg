@@ -58,8 +58,8 @@ public sealed class NixDebugger
         logLine($"nix eval started, pid {Process.Id}");
 
         Process.StandardInput.AutoFlush = true; // avoids deadlocks when typing
-        Stdout = PipeReader.Create(Process.StandardOutput.BaseStream, new(minimumReadSize: 1, useZeroByteReads: true)); // avoids hangs for prompt and small reads
-        Stderr = PipeReader.Create(Process.StandardError.BaseStream, new(minimumReadSize: 1, useZeroByteReads: true));
+        Stdout = PipeReader.Create(Process.StandardOutput.BaseStream, new(minimumReadSize: 1)); // avoids hangs for prompt and small reads
+        Stderr = PipeReader.Create(Process.StandardError.BaseStream, new(minimumReadSize: 1));
         _cancelSource = new();
 
         await Task.WhenAny(_ListenToStdout(), _ListenToStderr());
@@ -219,6 +219,7 @@ public sealed class NixDebugger
     internal Task WaitForPrompt(CancellationToken ct) {
         logLine("someone is waiting for the prompt...");
         return _promptEvent.WaitAsync(ct);
+        // return Task.Delay(100); // 100ms // fuck this, fuck life, fuck everything
     }
 
     internal async Task<bool> RefreshAndCheckPromptStatus(
@@ -247,6 +248,9 @@ public sealed class NixDebugger
             _promptEvent.Set();
             return true;
         } else {
+            var span = new byte[buf.Length];
+            buf.CopyTo(span);
+            logLine($"not a prompt, got {Convert.ToHexString(span)}");
             return false;
         }
     }

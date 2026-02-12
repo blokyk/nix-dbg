@@ -79,6 +79,7 @@ internal class NixDebugAdapter : DebugAdapterBase
             //         [ ] pure [default: false, except if filename is `flake.nix`] (i.e. not --impure)
             //         [ ] breakOnTrace [default: false] (i.e. --option debugger-on-trace true)
             //         [ ] ignoreTry [default: true] (i.e. --ignore-try)
+            //         [ ] allowIFD  [default: false] (i.e. --option allow-import-from-derivation false)
 
             LogLine($"launching file '{filename}' with flags {String.Join(' ', nixFlags)}...");
 

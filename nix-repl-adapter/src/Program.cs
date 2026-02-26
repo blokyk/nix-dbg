@@ -1,7 +1,7 @@
 ﻿using Blokyk.NixDebugAdapter;
 
 if (args is ["--no-dap"]) {
-    var dbg = new NixDebugger("/home/blokyk/dev/lab/dap/js-sample/sampleWorkspace/default.nix", [], (s) => Console.Error.WriteLine(s));
+    var dbg = new NixDebugger("../vscode/sampleWorkspace/default.nix", [], (s) => Console.Error.WriteLine(s));
 
     dbg.OnOutput += (s) => Console.WriteLine(s);
     dbg.OnErrorOutput += (s) => Console.Error.WriteLine(s);
@@ -33,6 +33,7 @@ try {
     adapter.Run();
 } catch (Exception e) {
     File.WriteAllText("/home/blokyk/dev/lab/nix-dbg/log.txt", e.Message);
+    throw;
 } finally {
     // File.WriteAllText("/dev/pts/3", "nix-dbg exited");
 }

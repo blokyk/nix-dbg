@@ -1,0 +1,183 @@
+{
+  "name": "nix-dbg",
+  "displayName": "Nix Debugger",
+  "version": "0.1.0",
+  "publisher": "ms-vscode",
+  "description": "Starter extension for developing debug adapters for VS Code.",
+  "author": {
+    "name": "Microsoft Corporation"
+  },
+  "license": "MIT",
+  "keywords": [
+    "multi-root ready"
+  ],
+  "engines": {
+    "vscode": "^1.66.0"
+  },
+  "icon": "images/mock-debug-icon.png",
+  "categories": [
+    "Debuggers"
+  ],
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Microsoft/vscode-nix-debug.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Microsoft/vscode-nix-debug/issues"
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "lint": "eslint src --ext ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --tsconfig=./tsconfig.json --external:vscode --format=cjs --platform=node --outfile=dist/extension.js",
+    "watch": "npm run -S esbuild-base -- --sourcemap --sources-content=false --watch",
+    "esbuild-web": "true; # esbuild ./src/extension.ts --bundle --tsconfig=./tsconfig.json --external:vscode --format=cjs --platform=browser --outfile=dist/web-extension.js",
+    "build": "npm run -S esbuild-base -- --sourcemap --sources-content=false && npm run -S esbuild-web -- --sourcemap --sources-content=false",
+    "package": "vsce package",
+    "publish": "vsce publish",
+    "publish-pre-release": "vsce publish --pre-release",
+    "vscode:prepublish": "rimraf dist && npm run -S esbuild-base -- --minify && npm run -S esbuild-web -- --minify",
+    "test": "npm run typecheck"
+  },
+  "devDependencies": {
+    "@types/glob": "^7.2.0",
+    "@types/mocha": "^9.1.0",
+    "@types/node": "^14.14.37",
+    "@types/vscode": "^1.66.0",
+    "@typescript-eslint/eslint-plugin": "^5.17.0",
+    "@typescript-eslint/parser": "^5.17.0",
+    "@vscode/debugadapter": "^1.56.0",
+    "@vscode/debugadapter-testsupport": "^1.56.0",
+    "await-notify": "^1.0.1",
+    "base64-js": "^1.5.1",
+    "esbuild": "^0.25.0",
+    "eslint": "^8.12.0",
+    "events": "^3.3.0",
+    "glob": "^7.2.0",
+    "mocha": "^9.2.2",
+    "path-browserify": "^1.0.1",
+    "rimraf": "^3.0.2",
+    "typescript": "^4.6.3",
+    "url": "^0.11.0",
+    "vsce": "^2.7.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onDebugResolve:nix",
+    "onDebugDynamicConfigurations:nix"
+  ],
+  "workspaceTrust": {
+    "request": "never"
+  },
+  "contributes": {
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "extension.nix-debug.runEditorContents",
+          "when": "resourceLangId == nix",
+          "group": "navigation@1"
+        },
+        {
+          "command": "extension.nix-debug.debugEditorContents",
+          "when": "resourceLangId == nix",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "extension.nix-debug.debugEditorContents",
+          "when": "resourceLangId == nix"
+        },
+        {
+          "command": "extension.nix-debug.runEditorContents",
+          "when": "resourceLangId == nix"
+        }
+      ],
+      "debug/variables/context": [
+        {
+          "command": "extension.nix-debug.toggleFormatting",
+          "when": "debugType == 'nix' && debugProtocolVariableMenuContext == 'simple'"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "extension.nix-debug.debugEditorContents",
+        "title": "Debug File",
+        "category": "Nix Debug",
+        "enablement": "!inDebugMode",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "extension.nix-debug.runEditorContents",
+        "title": "Run File",
+        "category": "Nix Debug",
+        "enablement": "!inDebugMode",
+        "icon": "$(play)"
+      },
+      {
+        "command": "extension.nix-debug.toggleFormatting",
+        "title": "Toggle between decimal and hex formatting"
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "nix"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "nix",
+        "languages": [
+          "nix"
+        ],
+        "label": "Debug nix code",
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Absolute path to the nix file to debug.",
+                "default": "${workspaceFolder}/default.nix"
+              },
+              "nixFlags": {
+                "type": "array",
+                "description": "List of flags to pass to 'nix eval'",
+                "default": []
+              }
+            }
+          },
+          "attach": {}
+        },
+        "initialConfigurations": [
+          {
+            "type": "nix",
+            "request": "launch",
+            "name": "Evaluate the root default.nix file",
+            "program": "${workspaceFolder}/default.nix"
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Nix Debug: Launch",
+            "description": "A new configuration for 'debugging' a user selected markdown file.",
+            "body": {
+              "type": "nix",
+              "request": "launch",
+              "name": "Ask for file name",
+              "program": "^\"\\${workspaceFolder}/\\${command:AskForProgramName}\"",
+              "stopOnEntry": true
+            }
+          }
+        ],
+        "variables": {
+          "AskForProgramName": "extension.nix-debug.getProgramName"
+        }
+      }
+    ]
+  }
+}
